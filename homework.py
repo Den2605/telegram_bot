@@ -47,7 +47,7 @@ def check_tokens():
         "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
     }
     for name, parametrs in PARAMETRS_DICT.items():
-        if parametrs == None:
+        if parametrs is None:
             error_tokens.append(name)
             print(f"Переменная окружения {name} отсутствует.")
     if len(error_tokens) != 0:
@@ -74,7 +74,7 @@ def get_api_answer(timestamp):
         payload = {"from_date": timestamp}
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
         if response.status_code != HTTPStatus.OK.value:
-            error_message = f"Ошибка при запросе к основному API: {error}"
+            error_message = "Ошибка при запросе к основному API."
             logger.error(error_message)
             raise Exception(error_message)
         if not isinstance(response.json(), dict):
@@ -101,7 +101,7 @@ def check_response(response):
             raise TypeError(error_message)
         if (
             response.get("homeworks") != []
-            and response.get("current_date") != None
+            and response.get("current_date") is not None
         ):
             return response.get("homeworks")[0]
         if response.get("homeworks") == []:
@@ -115,7 +115,7 @@ def check_response(response):
 def parse_status(homework):
     """Проверка статуса домашней работы."""
     if "homework_name" not in homework:
-        error_message = f"API домашки нет ключа: {homework_name}"
+        error_message = "API домашки нет ключа: 'homework_name'"
         logger.error(error_message)
         raise Exception(error_message)
     homework_name = homework["homework_name"]
@@ -148,11 +148,11 @@ def main():
                         send_message(bot, message)
                         old_message = message
                     else:
-                        debug_message = f"Изменений нет."
+                        debug_message = "Изменений нет."
                         logger.debug(debug_message)
                         time.sleep(RETRY_PERIOD)
             else:
-                debug_message = f"Список работ пуст."
+                debug_message = "Список работ пуст."
                 logger.debug(debug_message)
                 time.sleep(RETRY_PERIOD)
 
