@@ -25,7 +25,7 @@ logger.addHandler(streamHandler)
 
 PRACTICUM_TOKEN = os.getenv("TOKEN_PRACTICUM")
 TELEGRAM_TOKEN = os.getenv("TOKEN_TELEGRAM")
-TELEGRAM_CHAT_ID = 5270992374
+TELEGRAM_CHAT_ID = os.getenv("CHAT_ID")
 
 RETRY_PERIOD = 600
 ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
@@ -49,8 +49,7 @@ def check_tokens():
     for name, parametrs in PARAMETRS_DICT.items():
         if parametrs is None:
             error_tokens.append(name)
-            print(f"Переменная окружения {name} отсутствует.")
-    if len(error_tokens) != 0:
+    if error_tokens:
         error_message = "Проверьте переменные окружения."
         logger.critical(error_message)
         raise ValueError(error_message)
@@ -70,8 +69,8 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Выполняем запрос API."""
+    payload = {"from_date": timestamp}
     try:
-        payload = {"from_date": timestamp}
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
         if response.status_code != HTTPStatus.OK.value:
             error_message = "Ошибка при запросе к основному API."
@@ -81,7 +80,7 @@ def get_api_answer(timestamp):
             error_message = "Ошибка типа данных ответа на запрос."
             logger.error(error_message)
             raise TypeError(error_message)
-    except Exception as error:
+    except requests.exceptions.RequestException as error:
         error_message = f"Ошибка при запросе к основному API: {error}"
         logger.error(error_message)
         raise Exception(error_message)
@@ -95,17 +94,15 @@ def check_response(response):
             error_message = "Отсутствуют обязательные данные."
             logger.error(error_message)
             raise ValueError(error_message)
-        if type(response["homeworks"]) != list:
+        if not isinstance(response["homeworks"], list):
             error_message = "Ответ API имеет ошибочный тип данных."
             logger.error(error_message)
             raise TypeError(error_message)
         if (
-            response.get("homeworks") != []
+            response.get("homeworks")
             and response.get("current_date") is not None
         ):
             return response.get("homeworks")[0]
-        if response.get("homeworks") == []:
-            return None
     except Exception as error:
         error_message = f"Ошибка типа данных ответа на запрос.{error}"
         logger.error(error_message)
@@ -116,6 +113,10 @@ def parse_status(homework):
     """Проверка статуса домашней работы."""
     if "homework_name" not in homework:
         error_message = "API домашки нет ключа: 'homework_name'"
+        logger.error(error_message)
+        raise Exception(error_message)
+    if "status" not in homework:
+        error_message = "API домашки нет ключа: 'status'"
         logger.error(error_message)
         raise Exception(error_message)
     homework_name = homework["homework_name"]
@@ -142,7 +143,7 @@ def main():
             homework = check_response(response)
             timestamp = response["current_date"]
             if not isinstance(homework, type(None)):
-                if len(homework) != 0:
+                if homework:
                     message = parse_status(homework)
                     if old_message != message:
                         send_message(bot, message)
@@ -158,10 +159,9 @@ def main():
 
         except Exception as error:
             error_message = f"Сбой в работе программы: {error}"
-            logger.error(error_message)
+            logger.exception(error_message)
             send_message(bot, error_message)
             time.sleep(RETRY_PERIOD)
-            raise Exception(error_message)
 
 
 if __name__ == "__main__":
