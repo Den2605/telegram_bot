@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -72,41 +73,56 @@ def get_api_answer(timestamp):
     payload = {"from_date": timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
-        if response.status_code != HTTPStatus.OK.value:
-            error_message = "Ошибка при запросе к основному API."
-            logger.error(error_message)
-            raise Exception(error_message)
-        if not isinstance(response.json(), dict):
-            error_message = "Ошибка типа данных ответа на запрос."
-            logger.error(error_message)
-            raise TypeError(error_message)
-    except requests.exceptions.RequestException as error:
-        error_message = f"Ошибка при запросе к основному API: {error}"
+    except requests.RequestException as error:
+        raise ConnectionError(
+            f"Ошибка при подключении к основному API: {error}"
+        )
+    if response.status_code != HTTPStatus.OK.value:
+        error_message = "Ошибочный код в ответе API."
         logger.error(error_message)
-        raise Exception(error_message)
-    return response.json()
+        raise requests.exceptions.HTTPError(error_message)
+    if not isinstance(response.json(), dict):
+        error_message = "Ошибка типа данных ответа на запрос."
+        logger.error(error_message)
+        raise TypeError(error_message)
+    try:
+        response_json = response.json()
+    except json.JSONDecodeError as error:
+        error_message = f"Не удалось расшифровать ответ JSON: {error}."
+        logger.error(error_message)
+        raise ValueError(error_message)
+
+    return response_json
 
 
 def check_response(response):
     """Проверка корректности полученных от API данных."""
-    try:
-        if "homeworks" not in response:
-            error_message = "Отсутствуют обязательные данные."
-            logger.error(error_message)
-            raise ValueError(error_message)
-        if not isinstance(response["homeworks"], list):
-            error_message = "Ответ API имеет ошибочный тип данных."
-            logger.error(error_message)
-            raise TypeError(error_message)
-        if (
-            response.get("homeworks")
-            and response.get("current_date") is not None
-        ):
-            return response.get("homeworks")[0]
-    except Exception as error:
-        error_message = f"Ошибка типа данных ответа на запрос.{error}"
+    if not isinstance(response, dict):
+        error_message = "Ответ API имеет ошибочный тип данных."
         logger.error(error_message)
         raise TypeError(error_message)
+    if "homeworks" not in response:
+        error_message = "В ответе API отсутствует параметр 'homeworks'."
+        logger.error(error_message)
+        raise ValueError(error_message)
+    if "current_date" not in response:
+        error_message = "В ответе API отсутствует параметр 'curren_date'."
+        logger.error(error_message)
+        raise ValueError(error_message)
+    if not isinstance(response["homeworks"], list):
+        error_message = "Ответ API имеет ошибочный тип данных."
+        logger.error(error_message)
+        raise TypeError(error_message)
+    if not response["current_date"]:
+        error_message = (
+            "В ответе API параметр 'current_date' имеет ошибочное значение."
+        )
+        logger.exception(error_message)
+    if not response["homeworks"]:
+        error_message = "Статус работ не изменился."
+        raise Exception(error_message)
+    else:
+        return response["homeworks"][0]
 
 
 def parse_status(homework):
@@ -114,11 +130,11 @@ def parse_status(homework):
     if "homework_name" not in homework:
         error_message = "API домашки нет ключа: 'homework_name'"
         logger.error(error_message)
-        raise Exception(error_message)
+        raise KeyError(error_message)
     if "status" not in homework:
         error_message = "API домашки нет ключа: 'status'"
         logger.error(error_message)
-        raise Exception(error_message)
+        raise KeyError(error_message)
     homework_name = homework["homework_name"]
     status = homework["status"]
     if status not in HOMEWORK_VERDICTS:
@@ -126,7 +142,7 @@ def parse_status(homework):
             f"Некорректное значения состояния проверки работы: {status}"
         )
         logger.error(error_message)
-        raise Exception(error_message)
+        raise ValueError(error_message)
     verdict = HOMEWORK_VERDICTS[status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -139,28 +155,21 @@ def main():
     old_message = ""
     while True:
         try:
-            response = get_api_answer(timestamp)
-            homework = check_response(response)
-            timestamp = response["current_date"]
-            if not isinstance(homework, type(None)):
-                if homework:
-                    message = parse_status(homework)
-                    if old_message != message:
-                        send_message(bot, message)
-                        old_message = message
-                    else:
-                        debug_message = "Изменений нет."
-                        logger.debug(debug_message)
-                        time.sleep(RETRY_PERIOD)
-            else:
-                debug_message = "Список работ пуст."
-                logger.debug(debug_message)
-                time.sleep(RETRY_PERIOD)
-
+            response_json = get_api_answer(timestamp)
+            homework = check_response(response_json)
+            timestamp = response_json["current_date"]
+            message = parse_status(homework)
+            if old_message != message:
+                send_message(bot, message)
+                old_message = message
         except Exception as error:
-            error_message = f"Сбой в работе программы: {error}"
+            error_message = f"Работа программы: {error}"
             logger.exception(error_message)
-            send_message(bot, error_message)
+            if old_message != error_message:
+                old_message = error_message
+                send_message(bot, error_message)
+
+        finally:
             time.sleep(RETRY_PERIOD)
 
 
