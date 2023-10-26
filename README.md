@@ -26,6 +26,7 @@ python homework.py
 ## Технологии
 - Python
 - Python-telegram-bot
+- Rest Api
 
 ## Автор
 Дриц Денис
